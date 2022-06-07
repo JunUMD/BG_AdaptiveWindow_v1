@@ -1,0 +1,314 @@
+# -*- coding: utf-8 -*-
+"""                 
+Created on 12/25/2020
+                    
+@author: Jun@UMD             
+"""
+import matplotlib as mpl
+#mpl.use('Agg')              
+import os,pickle
+from pathlib import Path
+import numpy as np
+from numpy.linalg import det,inv,pinv,svd,eig,cond
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib as mpl
+from numpy import dot
+from mpl_toolkits.basemap import Basemap
+import glob
+from scipy.interpolate import griddata
+import math
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+
+from calculate_BGcoef.adjust_window_pythonlib.Gaussian_fit import twoD_Gaussian_fit,twoD_Gaussian,\
+                                                                  oneD_Gaussian_fit,oneD_Gaussian
+from calculate_BGcoef.adjust_window_pythonlib.FitCircle import FitCircle_class
+
+class display_adjust_class:
+    def __init__(self,delx,dely,ifr,winadj_subdir,winadj_subfigdir,
+                 tgt_edg_lat,tgt_edg_lon,
+                 tgt_cen_lat,tgt_cen_lon,
+                 src_cen_lat,src_cen_lon):
+        self.delx=delx
+        self.dely=dely
+        self.ifr=ifr
+        self.winadj_subdir=winadj_subdir
+        self.winadj_subfigdir=winadj_subfigdir
+        # degree
+        self.tgt_edg_lat=tgt_edg_lat  #[nphi]
+        self.tgt_edg_lon=tgt_edg_lon
+        self.tgt_cen_lat=tgt_cen_lat
+        self.tgt_cen_lon=tgt_cen_lon
+        self.src_cen_lat=src_cen_lat  #[nsc,nfv]
+        self.src_cen_lon=src_cen_lon
+
+
+    def display_condnum_Q0e2(self):
+        fname=os.path.join(self.winadj_subdir,'Cond_Q0e2.pickle')
+        with open(fname,'rb') as f:
+            [condnums,Q0_bst,e2_bst]=pickle.load(f)
+
+        font_jun={'family':'Times New Roman','size':40}
+        mpl.rc('font',**font_jun)
+        fig=plt.figure(figsize=(20,20))
+        #ax1=fig.add_subplot(211)
+        #ax2=ax1.twinx()
+        #ax1.plot(np.log10(condnums),np.log10(Q0_bst),'b-',linewidth=2,marker='o',markersize=10)
+        #ax2.plot(np.log10(condnums),np.log10(e2_bst),'r-',linewidth=2,marker='o',markersize=10)
+        #ax1.set_xlabel('log10 condition number')
+        #ax1.set_ylabel('Q0 of the best point',color='b')
+        #ax2.set_ylabel('e2 of the best point',color='r')
+        #ax1.set_title('FOV '+str(self.ifr))
+        ##ax1.set_ylim(-2.1,-2.0)
+        ax=fig.add_subplot(111)
+        ax.plot(np.log10(Q0_bst),np.log10(e2_bst),'k-',linewidth=2,marker='o',markersize=10)
+        ax.set_xlabel('log10 Q0')
+        ax.set_ylabel('log10 e2')
+        plt.savefig(self.winadj_subfigdir+'Cond_Q0e2.png',dpi=300,bbox_inches='tight')
+        plt.close()
+
+    def bmwidth_e2_cond(self):
+        fname=os.path.join(self.winadj_subdir,'Cond_Q0e2.pickle')
+        with open(fname,'rb') as f:
+            [condnums,Q0,e2]=pickle.load(f)
+
+        fname=os.path.join(self.winadj_subdir,'Estimate_bmwidth.pickle')
+        with open(fname,'rb') as f:
+            bmwidth=pickle.load(f)
+
+        print(len(bmwidth))
+        print(len(condnums))
+        print(len(e2))
+        bmwidth=np.array(bmwidth)
+        condnums=np.array(condnums)
+        e2=np.array(e2)
+        idd=np.where(~np.isnan(bmwidth))
+        bmwidth=bmwidth[idd]
+        condnums=condnums[idd]
+        e2=e2[idd]
+        print(bmwidth.shape)
+        print(len(condnums))
+        print(len(e2))
+
+        font_jun={'family':'Times New Roman','size':40}
+        mpl.rc('font',**font_jun)
+        fig=plt.figure(figsize=(20,20))
+        #ax1=fig.add_subplot(211)
+        #ax2=ax1.twinx()
+
+        ##e2=np.log10(e2)
+        ##bmwidth=np.log10(bmwidth)
+
+        #ax1.plot(np.log10(condnums),bmwidth,'b-',linewidth=2,marker='o',markersize=10)
+        #ax2.plot(np.log10(condnums),e2,'r-',linewidth=2,marker='o',markersize=10)
+        #ax1.set_xlabel('log10 condition number')
+        #ax1.set_ylabel('bmwidth of the best point',color='b')
+        #ax2.set_ylabel('e2 of the best point',color='r')
+        ax=fig.add_subplot(111)
+        ax.plot(bmwidth,e2,'k-',linewidth=2,marker='o',markersize=10)
+        ax.set_xlabel('bmwidth')
+        ax.set_ylabel('e2')
+        plt.savefig(self.winadj_subfigdir+'Beamwidth_e2.png',dpi=300,bbox_inches='tight')
+        plt.close()       
+ 
+        
+
+
+
+    def display_window(self):
+        fname_prefix=self.winadj_subdir+'Winsize_*.pickle'
+        flist=glob.glob(fname_prefix)
+        flist.sort(key=lambda x:x.split('_')[2])
+        
+        for i,fname in enumerate(flist):
+            print(i,os.path.basename(fname))
+            with open(fname,'rb') as f:
+                [alpha_bst,Q0_bst,e2_bst,condnum,
+                 S,windowsize,windowindx,idx_src]=pickle.load(f)
+            if i==0: 
+                self.windowsize0=windowsize
+                self.windowindx0=windowindx
+
+            fsave=self.winadj_subfigdir+os.path.basename(fname)
+            fsave=fsave.replace('.pickle','.png')
+            self.display_img(alpha_bst,Q0_bst,e2_bst,condnum,
+                             S,windowsize,windowindx,idx_src,fsave)
+
+    def display_img(self,alpha_bst,Q0_bst,e2_bst,condnum,
+                    S,windowsize,windowindx,idx_src,fsave):
+
+        #winsize=np.array(alphas).shape[1]
+        winsize=windowsize
+
+        font_jun={'size':50}
+        mpl.rc('font',**font_jun)
+        cm=plt.cm.get_cmap('jet')
+        fig=plt.figure(figsize=(40,40))
+        ax=fig.add_subplot(221)
+        im=ax.imshow(S,cmap=cm,origin='lower',
+                     extent=[0,winsize,0,winsize],vmin=0)
+        divider=make_axes_locatable(ax)
+        cax=divider.append_axes('right',     #position
+                                 size='5%',   #width
+                                 pad=0.2)     #seperation between graph and colorbar
+        cb=fig.colorbar(im,cax=cax)
+        ax.set_xlabel('log 10 (Cond num) = '+str(np.log10(condnum)),color='r')
+
+
+        ax=fig.add_subplot(222)
+        lon_cen=self.src_cen_lon[windowindx[idx_src-1][0],windowindx[idx_src-1][1]]
+        lat_cen=self.src_cen_lat[windowindx[idx_src-1][0],windowindx[idx_src-1][1]]
+        lon0=[]
+        lat0=[]
+        lon=[]
+        lat=[]
+        for [isc,ifv] in self.windowindx0:
+            lon0.append(self.src_cen_lon[isc,ifv])
+            lat0.append(self.src_cen_lat[isc,ifv])
+            if [isc,ifv] in windowindx:
+                lon.append(self.src_cen_lon[isc,ifv])
+                lat.append(self.src_cen_lat[isc,ifv])
+        minlon=min(np.min(self.tgt_edg_lon),np.min(lon0))-0.1
+        maxlon=max(np.max(self.tgt_edg_lon),np.max(lon0))+0.1
+        minlat=min(np.min(self.tgt_edg_lat),np.min(lat0))-0.1
+        maxlat=max(np.max(self.tgt_edg_lat),np.max(lat0))+0.1
+        cm=plt.cm.get_cmap('rainbow')
+        m=Basemap(projection='cyl', #map projection,cyl is default
+                  llcrnrlon=minlon,llcrnrlat=minlat,urcrnrlon=maxlon,urcrnrlat=maxlat,
+                  resolution='c') #c: crude; l:low; i:intermediate, h:high, f:full; sometimes can only >=h
+        m.drawmapboundary(fill_color='lightblue') #the whole map is filled with the specified color
+        m.fillcontinents(color='wheat',lake_color='lightblue') #the continents are filled
+        m.drawcoastlines()  #draw coastline, from gshhs
+        sc=m.plot(self.tgt_edg_lon,self.tgt_edg_lat,color='b',linewidth=2,zorder=10)
+        m.scatter(lon0,lat0,c='k',marker='X',s=200,zorder=11)
+        m.scatter(lon,lat,c='orangered',marker='X',s=200,zorder=12)
+        m.scatter(lon_cen,lat_cen,c='m',marker='X',s=400,zorder=13)
+
+        ax=fig.add_subplot(223)
+        x=np.arange(winsize)
+        ax.plot(x,alpha_bst,'-m',linewidth=2,marker='o',markersize=15,zorder=12,label='igm=best')
+        ax.legend()
+        ax.set_xlabel('window index \n sum(Coef)='+str(np.sum(alpha_bst)))
+        ax.set_ylabel('alpha')
+
+        plt.savefig(fsave,dpi=300,bbox_inches='tight')
+        plt.close()
+
+    def display_Gsim(self):
+        fname_prefix=self.winadj_subdir+'Gsim_win*_full.pickle'
+        flist=glob.glob(fname_prefix)
+        if len(flist) == 0:
+            print('Gsim_win*_full.pickle not found in '+self.winadj_subdir)
+        else:
+            fname=os.path.basename(flist[0])
+            id1=fname.find('win')
+            id2=fname.find('_full')
+            num=int(fname[id1+3:id2])
+            bmwidth=[]
+            for ifile in np.arange(num,0,-1):
+                if ifile==num:
+                    fname=self.winadj_subdir+'Gsim_win'+str(ifile)+'_full.pickle'
+                    tab='Gsim_win'+str(ifile)+'_full'
+                else:
+                    fname=self.winadj_subdir+'Gsim_win'+str(ifile)+'.pickle'
+                    tab='Gsim_win'+str(ifile)
+                if os.path.isfile(fname):
+                    bmwidth.append(self.display_G(tab))
+
+        fname=os.path.join(self.winadj_subdir,'Estimate_bmwidth.pickle')
+        with open(fname,'wb') as f:
+            pickle.dump(bmwidth,f)
+
+
+    def display_G(self,tab):
+        print(tab) 
+        with open(self.winadj_subdir+tab+'.pickle','rb') as f:
+            [antwgt,antpos_nx,antpos_ny]=pickle.load(f)
+
+        idd=np.where(antwgt>0)
+        z=antwgt[idd].ravel()
+        x=antpos_nx[idd].ravel()*self.delx
+        y=antpos_ny[idd].ravel()*self.dely
+        
+        z=z/np.max(z)
+        x=x-np.min(x)
+        y=y-np.min(y)
+
+        [popt,pcov]=twoD_Gaussian_fit(x,y,z)
+        if not math.isinf(pcov[0,0]):
+            z=z/popt[0]
+            x=x-popt[1]
+            y=y-popt[2]
+            fit_flag=True
+        else:
+            fit_flag=False
+            
+
+        print(fit_flag,popt[0:3])
+
+        idd=np.where(np.abs(z-0.5)<0.02)
+        #idd=np.where(z>=0.5)
+        x_bm=x[idd]
+        y_bm=y[idd]
+        z_bm=z[idd]
+        n_bm=len(x_bm)
+        bmwidth=np.nan
+        if n_bm>2 and fit_flag:
+           if 1>0: 
+               # for circle fitting --------
+               fitcircle_obj=FitCircle_class(x_bm,y_bm)
+               fitcircle_obj.fit()
+               x_cr,y_cr=fitcircle_obj.x_fit2,fitcircle_obj.y_fit2
+               bmwidth=np.degrees(fitcircle_obj.R_2*2.0/824)
+           else:
+               # for ellipse fitting ---------
+               ellipse_obj=Ellipse_type()
+               center, param_axis, param_orien=ellipse_obj.fit_ellipse([x_bm,y_bm,z_bm])
+               
+
+        if tab=='Gsrc': self.area=[np.min(x),np.max(x),np.min(y),np.max(y)]       
+
+        cm=plt.cm.get_cmap('jet')
+        font_jun={'size':30}
+        mpl.rc('font',**font_jun)
+        fig=plt.figure(figsize=(15,30))
+        ax=fig.add_subplot(311)
+        ax.scatter(x,y,c=z,cmap='jet',s=10,marker='o')
+        if n_bm>2 and fit_flag:
+            ax.scatter(x_bm,y_bm,s=20,marker='X',c='k')
+            ax.plot(x_cr,y_cr,'k-')
+        ax.set_xlim(self.area[0],self.area[1])
+        ax.set_ylim(self.area[2],self.area[3])
+
+        [xmin,xmax,ymin,ymax]=self.area
+        dd=self.delx
+        x_side=np.arange(xmin,xmax+dd,dd)
+        y_side=np.arange(ymin,ymax+dd,dd)
+        x_grd,y_grd=np.meshgrid(x_side,y_side)
+        points=np.array([x,y]).T
+        z_grd=griddata(points,z,(x_grd,y_grd),method='linear')
+        ax=fig.add_subplot(312)
+        im=ax.imshow(z_grd,cmap='jet',origin='lower',
+                     extent=[xmin,xmax,ymin,ymax],
+                     vmin=0, vmax=1)
+        if n_bm>2 and fit_flag:
+            ax.scatter(x_bm,y_bm,s=20,marker='X',c='k')
+            if fit_flag: ax.plot(x_cr,y_cr,'k-')
+        divider=make_axes_locatable(ax)
+        cax=divider.append_axes('right',     #position
+                                size='5%',   #width
+                                pad=0.2)     #seperation between graph and colorbar
+        cb=fig.colorbar(im,cax=cax)
+        ax.set_xlabel('Beam width = '+str(bmwidth))
+
+
+        plt.savefig(self.winadj_subfigdir+tab+'.png',dpi=300,bbox_inches='tight')
+        plt.close()
+       
+        print('Estimated Beamwidth = ',bmwidth)        
+        return bmwidth
+
+
+

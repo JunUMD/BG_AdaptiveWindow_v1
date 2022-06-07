@@ -1,0 +1,6 @@
+gfortran -c constants.f90
+gfortran -c module_math.f90
+gfortran -c module_axis.f90
+gfortran -c module_footprint.f90
+
+f2py -c constants.f90 module_math.f90 module_axis.f90 module_footprint.f90 ant_prj.f90 -m ant_prj
